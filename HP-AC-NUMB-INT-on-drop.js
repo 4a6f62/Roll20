@@ -15,11 +15,12 @@
 const HP_AC_NUMB_INT_on_drop = (() => {
     'use strict';
 
-    const version = '0.1beta';
+    const version = '0.2beta';
     const author = '4a6f62';
     const github = 'https://github.com/4a6f62';
     const debug = false;
-    const COOLDOWN_MS = 2000;
+    const COOLDOWN_MS1 = 1000;
+    const COOLDOWN_MS2 = 2000;
 
     const processed = new Set();
     const logDebug = (msg) => {
@@ -44,7 +45,7 @@ const HP_AC_NUMB_INT_on_drop = (() => {
         logDebug(`nameplateWithNumber: ${name}`);
         if (!name) return;
 
-        const count = countNamedTokens(name, token.get('pageid')) + 1;
+        const count = countNamedTokens(name, token.get('pageid'));
         token.set({
             showplayers_name: true,
             name: `${name} #${count}`
@@ -69,16 +70,17 @@ const HP_AC_NUMB_INT_on_drop = (() => {
     };
 
     const rollInitiative = (token, mod = 0, name) => {
+        if (!token) return;
+        
         const charId = token.get('represents');
-        if (!charId || !isCombatActive()) return;
-        
-        logDebug(charId);
-        logDebug(token.id);
-        
+        if (!charId) return;
+    
+        const tokenId = token.id;
+    
         const roll = Math.floor(Math.random() * 21);
+        const total = roll + mod;
+        let turnorder = Campaign().get('turnorder') || '[]';
         try {
-            const total = roll + mod;
-            let turnorder = Campaign().get('turnorder');
             turnorder = JSON.parse(turnorder);
             turnorder.push({
                 id: token.id,
@@ -86,14 +88,46 @@ const HP_AC_NUMB_INT_on_drop = (() => {
                 custom: name,
                 _pageid: token.get('pageid')
             });
-            turnorder = JSON.stringify(turnorder);
-            logDebug(`Initiative turnorder: ${turnorder}`);
-            Campaign().set('turnorder', turnorder);
-            logDebug(`Initiative: ${name}: ${total}`);
+            
+            turnorder.sort((a, b) => b.pr - a.pr);
+            Campaign().set('turnorder', JSON.stringify(turnorder));
+            sendChat('Initiative Roller', `/w gm Rolled ${total} for ${name}`);
         } catch (e) {
-            logDebug(`Initiative error: ${e.message}`);
+            sendChat('Initiative Roller', `/w gm Error: ${e.message}`);
         }
     };
+    
+     const checkRollInitiative = (token, mod = 0, name) => {
+        if (!token) return;
+        
+        const charId = token.get('represents');
+        if (!charId) return;
+    
+        const tokenId = token.id;
+    
+        const roll = Math.floor(Math.random() * 21);
+        const total = roll + mod;
+        let turnorder = Campaign().get('turnorder') || '[]';
+        
+        if(turnorder === "[]") {
+            const cmd = `!rollinit ${tokenId}|${mod}|${name}`;
+            sendChat('Initiative?', `/w gm Roll initiative for **${name}**? [Yes](${cmd})`);
+        } else {
+            rollInitiative(token, mod, name);
+        }
+    };
+
+    on('chat:message', (msg) => {
+        if (msg.type !== 'api') return;
+        const args = msg.content.trim().split(' ');
+        if (args[0] !== '!rollinit') return;
+    
+        const [tokenId, modStr, name] = args[1].split('|');
+        const token = getObj('graphic', tokenId);
+        const mod = parseInt(modStr, 10) || 0;
+    
+       rollInitiative(token,mod, name)
+    });
 
     const addOrUpdateAbility = (name, content, charId) => {
         let ability = findObjs({ type: 'ability', characterid: charId, name })[0];
@@ -108,14 +142,14 @@ const HP_AC_NUMB_INT_on_drop = (() => {
             ability.set('action', content);
         }
     };
-
-    const handleTokenDrop = (token) => {
+    
+    const setToken = (token) => {
         const id = token.id;
-        if (processed.has(id)) return;
-        processed.add(id);
-        setTimeout(() => processed.delete(id), COOLDOWN_MS);
-
-        if (!token.get('represents') || token.get('bar1_value')) return;
+        var currentHealth = token.get("bar1_value");
+        var maxHealth = token.get("bar1_max");
+        
+        if (currentHealth) return;
+        if (!token.get('represents')) return;
 
         const charId = token.get('represents');
         const character = getObj('character', charId);
@@ -132,11 +166,21 @@ const HP_AC_NUMB_INT_on_drop = (() => {
         token.set({ bar2_value: ac });
         nameplateWithNumber(token, character.get('name'));
         rollHP(token, hpFormula, hpFallback, character.get('name'));
-        rollInitiative(token, initMod, character.get('name'));
+        checkRollInitiative(token, initMod, character.get('name'));
         addOrUpdateAbility('Speed: ' + getAttr(attrs, 'npc_speed'), '', charId);
         addOrUpdateAbility('Passive Perception: ' + getAttr(attrs, 'passive_wisdom'), '', charId);
     };
 
+    const handleTokenDrop = (token) => {
+        const id = token.id;
+        
+        if (processed.has(id)) return;
+        processed.add(id);
+        
+        setTimeout(() => setToken(token), COOLDOWN_MS1);
+        setTimeout(() => processed.delete(id), COOLDOWN_MS2);
+    };
+    
     const register = () => {
         on('add:token', handleTokenDrop);
     };
