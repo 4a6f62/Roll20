@@ -25,7 +25,7 @@ const HP_AC_NUMB_INT_on_drop = (() => {
     const processed = new Set();
     const logDebug = (msg) => {
         if (debug) {
-            sendChat('HP-AC-NUMB-INT', `/w gm [DEBUG] ${msg}`);
+            log(`HP-AC-NUMB-INT: ${msg}`);
         }
     };
 
@@ -145,18 +145,42 @@ const HP_AC_NUMB_INT_on_drop = (() => {
     
     const setToken = (token) => {
         const id = token.id;
+        logDebug(`setToken: ${id}`);
         var currentHealth = token.get("bar1_value");
         var maxHealth = token.get("bar1_max");
         
-        if (currentHealth) return;
-        if (!token.get('represents')) return;
-
-        const charId = token.get('represents');
+        if (currentHealth) {
+            logDebug("currentHealth set, skipping");
+            return;
+        }
+        
+        let charId = token.get('represents');
+        
+        if (!charId) {
+            const baseName = token.get('name')?.replace(/\s?#\d+$/, '')?.trim();
+            const match = findObjs({ type: 'character' })
+                .find(c => c.get('name') === baseName);
+            if (match) {
+                charId = match.id;
+                token.set('represents', charId);
+                logDebug(`Linked token "${token.get('name')}" to character "${baseName}"`);
+            } else {
+                logDebug(`No matching character found for token "${token.get('name')}"`);
+                return;
+            }
+        }
+        
         const character = getObj('character', charId);
-        if (!character) return;
+        if (!character) {
+            logDebug(`No character: ${charId}`);
+            return;
+        }
 
         const attrs = findObjs({ type: 'attribute', characterid: charId });
-        if (getAttr(attrs, 'npc') !== '1') return;
+        if (parseInt(getAttr(attrs, 'npc')) !== 1) {
+            logDebug(`Not an NPC: ${charId}`);
+            return;
+        }
 
         const hpFormula = getAttr(attrs, 'npc_hpformula').trim();
         const hpFallback = parseInt(getAttr(attrs, 'hp'), 10) || 1;
@@ -174,8 +198,12 @@ const HP_AC_NUMB_INT_on_drop = (() => {
     const handleTokenDrop = (token) => {
         const id = token.id;
         
-        if (processed.has(id)) return;
+        if (processed.has(id)) {
+            logDebug("already processing ${id}... skip");
+            return;
+        }
         processed.add(id);
+        logDebug(`processing: ${id}`);
         
         setTimeout(() => setToken(token), COOLDOWN_MS1);
         setTimeout(() => processed.delete(id), COOLDOWN_MS2);
