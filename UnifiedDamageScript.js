@@ -9,7 +9,7 @@ const UnifiedDamageScript = (() => { //eslint-disable-line no-unused-vars
       sheet: 'dnd5e_r20',
       hpBar: 1,
       acBar: 2,
-      gmOnly: true,
+      gmOnly: false,
       templates: {
         names: ['atkdmg', 'dmg', 'npcfullatk', 'npcdmg'],
         damageFields: ['dmg1', 'dmg2', 'globaldamage'],
